@@ -1,0 +1,22 @@
+# Secrets - NE JAMAIS COMMITER
+.env
+.alcapass
+*.pem
+*.key
+
+# Cles SSH
+id_ed25519
+id_ed25519.pub
+
+# Environnement Python
+psmm-venv/
+__pycache__/
+*.pyc
+
+# Logs et donnees locales
+logs/
+backups/
+
+# Etat runtime
+chat_state.txt
+last_mail.txt
