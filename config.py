@@ -7,9 +7,9 @@ load_dotenv("/home/monitor/psmm/.env")
 
 # --- Serveurs (reseau plateforme / bridge ethernet) ---
 SERVEURS = {
-    "ftp":     {"host": "10.10.12.149", "user": "monitor"},
-    "web":     {"host": "10.10.12.146", "user": "monitor"},
-    "mariadb": {"host": "10.10.12.148", "user": "monitor"},
+    "ftp":     {"host": "10.10.2.1",   "user": "monitor"},
+    "web":     {"host": "10.10.2.0",   "user": "monitor"},
+    "mariadb": {"host": "10.10.1.255", "user": "monitor"},
 }
 
 SSH_KEY = "/home/monitor/.ssh/id_ed25519"
@@ -22,5 +22,6 @@ MAIL = {
     "app_password": os.environ.get("MAIL_APP_PASSWORD"),
     "destinataire": os.environ.get("MAIL_DESTINATAIRE"),
 }
+
 # --- Google Chat (webhook) ---
 CHAT_WEBHOOK = os.environ.get("CHAT_WEBHOOK")

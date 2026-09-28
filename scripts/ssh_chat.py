@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Job 15 - Notification Google Chat.
-Deux modes (passes en argument) :
-  - daily : rapport quotidien (etat systeme + resume des evenements)
-  - check : surveillance ; alerte SEULEMENT si nouvelles tentatives detectees
-            (dans ce cas, envoie l'alerte + l'etat systeme).
+- daily : rapport quotidien (etat systeme + total des tentatives)
+- check : alerte SEULEMENT sur les NOUVELLES tentatives (detail id/compte/date/IP)
+          suivi du dernier id vu par table dans un fichier memoire.
 Usage : python3 ssh_chat.py [daily|check]"""
 
 import sys
@@ -18,6 +17,7 @@ from chat_notifier import envoyer_chat
 A_SURVEILLER = ["ftp", "web", "mariadb"]
 MARIADB = config.SERVEURS["mariadb"]
 FICHIER_ETAT = "/home/monitor/psmm/logs/chat_state.txt"
+# nom lisible -> table
 TABLES = {"SQL": "sql_errors", "FTP": "ftp_errors", "Web": "web_errors"}
 
 
@@ -43,15 +43,12 @@ def releve_cpu(s):
     m = re.search(r"([\d,]+)\s*id", o)
     return round(100 - num(m.group(1)), 1) if m else 0.0
 
-
 def releve_ram(s):
     o = ssh_exec(s, "free -m")
     for l in o.splitlines():
         if l.lower().startswith("mem") or l.startswith("Mém"):
-            c = l.split()
-            return round(num(c[2]) / num(c[1]) * 100, 1)
+            c = l.split(); return round(num(c[2]) / num(c[1]) * 100, 1)
     return 0.0
-
 
 def releve_disk(s):
     o = ssh_exec(s, "df -h /")
@@ -60,7 +57,6 @@ def releve_disk(s):
             return num(l.split()[4].replace("%", ""))
     return 0.0
 
-
 def bloc_etat_systeme():
     lignes = ["*Etat des serveurs :*"]
     for s in A_SURVEILLER:
@@ -68,40 +64,58 @@ def bloc_etat_systeme():
     return "\n".join(lignes)
 
 
-# ---------- Evenements (tentatives d'acces) ----------
-def total_tentatives():
-    """Compte total des tentatives dans les 3 tables."""
-    total = 0
-    for table in TABLES.values():
-        o = ssh_exec("mariadb", f'sudo mariadb -N -e "SELECT COUNT(*) FROM psmm.{table};"')
-        try:
-            total += int(o.strip())
-        except ValueError:
-            pass
-    return total
-
-
-def resume_evenements():
-    lignes = ["*Tentatives d'acces frauduleuses :*"]
-    for nom, table in TABLES.items():
-        o = ssh_exec("mariadb", f'sudo mariadb -N -e "SELECT COUNT(*) FROM psmm.{table};"')
-        lignes.append(f"• *{nom}* : {o.strip()} tentative(s)")
-    return "\n".join(lignes)
-
-
-# ---------- Etat persistant (dernier total vu + date rapport) ----------
+# ---------- Etat persistant : dernier id vu par table ----------
 def lire_etat():
+    """Retourne un dict {table: dernier_id} + la date du dernier rapport."""
+    ids = {t: 0 for t in TABLES.values()}
+    date_rapport = ""
     try:
         with open(FICHIER_ETAT) as f:
-            date_rapport, dernier_total = f.read().strip().split(";")
-            return date_rapport, int(dernier_total)
+            for ligne in f.read().strip().splitlines():
+                if ligne.startswith("rapport="):
+                    date_rapport = ligne.split("=", 1)[1]
+                elif "=" in ligne:
+                    t, v = ligne.split("=", 1)
+                    if t in ids:
+                        ids[t] = int(v)
     except (FileNotFoundError, ValueError):
-        return "", 0
+        pass
+    return date_rapport, ids
 
-
-def ecrire_etat(date_rapport, total):
+def ecrire_etat(date_rapport, ids):
     with open(FICHIER_ETAT, "w") as f:
-        f.write(f"{date_rapport};{total}")
+        f.write(f"rapport={date_rapport}\n")
+        for t, v in ids.items():
+            f.write(f"{t}={v}\n")
+
+
+def dernier_id(table):
+    """Plus grand id actuellement en base pour cette table."""
+    o = ssh_exec("mariadb", f'sudo mariadb -N -e "SELECT IFNULL(MAX(id),0) FROM psmm.{table};"')
+    try:
+        return int(o.strip())
+    except ValueError:
+        return 0
+
+def nouvelles_lignes(table, apres_id):
+    """Renvoie les lignes de la table avec id > apres_id (les nouvelles)."""
+    req = (f"SELECT id, compte, date_heure, ip FROM psmm.{table} "
+           f"WHERE id > {apres_id} ORDER BY id;")
+    o = ssh_exec("mariadb", f'sudo mariadb -N -e "{req}"')
+    lignes = []
+    for l in o.splitlines():
+        if l.strip():
+            champs = l.split("\t")
+            if len(champs) == 4:
+                lignes.append(champs)  # [id, compte, date, ip]
+    return lignes
+
+def total(table):
+    o = ssh_exec("mariadb", f'sudo mariadb -N -e "SELECT COUNT(*) FROM psmm.{table};"')
+    try:
+        return int(o.strip())
+    except ValueError:
+        return 0
 
 
 if __name__ == "__main__":
@@ -109,24 +123,40 @@ if __name__ == "__main__":
     aujourdhui = datetime.now().strftime("%Y-%m-%d")
     heure = datetime.now().strftime("%d/%m/%Y %H:%M")
 
-    date_rapport, dernier_total = lire_etat()
-    total_actuel = total_tentatives()
+    date_rapport, ids_vus = lire_etat()
 
     if mode == "daily":
-        # rapport quotidien systematique
-        msg = (f"📊 *Rapport quotidien PSMM* - {heure}\n\n"
-               + bloc_etat_systeme() + "\n\n" + resume_evenements())
-        envoyer_chat(msg)
-        ecrire_etat(aujourdhui, total_actuel)
+        # rapport quotidien : etat systeme + TOTAL (vue d'ensemble)
+        lignes = [f"📊 *Rapport quotidien PSMM* - {heure}", "", bloc_etat_systeme(), "",
+                  "*Total des tentatives archivees :*"]
+        for nom, table in TABLES.items():
+            lignes.append(f"• *{nom}* : {total(table)} tentative(s)")
+        envoyer_chat("\n".join(lignes))
+        # on met a jour la date rapport ET les id (pour repartir propre)
+        for t in TABLES.values():
+            ids_vus[t] = dernier_id(t)
+        ecrire_etat(aujourdhui, ids_vus)
         print("[+] Rapport quotidien envoye")
 
-    else:  # mode check : alerte seulement si nouvelles tentatives
-        if total_actuel > dernier_total:
-            nouvelles = total_actuel - dernier_total
-            msg = (f"🚨 *ALERTE PSMM* - {nouvelles} nouvelle(s) tentative(s) detectee(s) - {heure}\n\n"
-                   + resume_evenements() + "\n\n" + bloc_etat_systeme())
+    else:  # check : alerte seulement sur les NOUVELLES tentatives, avec detail
+        blocs = []
+        total_nouvelles = 0
+        for nom, table in TABLES.items():
+            lignes_new = nouvelles_lignes(table, ids_vus[table])
+            if lignes_new:
+                total_nouvelles += len(lignes_new)
+                sous = [f"*{nom}* — {len(lignes_new)} nouvelle(s) :"]
+                for (id_, compte, date_h, ip) in lignes_new:
+                    sous.append(f"   • #{id_} `{compte}` — {date_h} — {ip}")
+                blocs.append("\n".join(sous))
+                # on avance le dernier id vu pour cette table
+                ids_vus[table] = int(lignes_new[-1][0])
+
+        if total_nouvelles > 0:
+            msg = (f"🚨 *ALERTE PSMM* — {total_nouvelles} nouvelle(s) tentative(s) — {heure}\n\n"
+                   + "\n\n".join(blocs))
             envoyer_chat(msg)
-            ecrire_etat(date_rapport, total_actuel)
-            print(f"[!] Alerte envoyee ({nouvelles} nouvelles tentatives)")
+            ecrire_etat(date_rapport, ids_vus)
+            print(f"[!] Alerte envoyee ({total_nouvelles} nouvelles)")
         else:
             print("[*] Rien de nouveau - pas d'envoi")
