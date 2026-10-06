@@ -1,7 +1,7 @@
 # 🛡️ PSMM — Supervision de sécurité
 
 > **P**ython · **S**hell · **M**aria**D**B · **M**ail
-> Centralisation des protocoles de gestion d'erreurs — infrastructure Debian
+> Centralisation des protocoles de gestion d'erreurs — infrastructure Debian (+ bonus rsyslog en mode push)
 
 Projet réalisé dans le cadre du **Bachelor IT Cybersécurité** — La Plateforme.
 
@@ -65,7 +65,8 @@ PSMM/
 ├── .env.example         # Modèle de configuration des secrets
 ├── scripts/             # Les livrables (scripts de supervision ssh_*.py)
 ├── tools/               # Utilitaires de test (génération de fausses tentatives)
-└── docs/                # Support de soutenance + captures
+├── rsyslog/             # Bonus : configs collecteur / FTP / Web (TLS, nftables)
+└── docs/                # Supports de soutenance + captures
 ```
 
 ---
@@ -159,6 +160,65 @@ Rapport quotidien + alerte temps réel des tentatives dans un Space Google Chat.
 
 ---
 
+## 🚀 Bonus — Collecte en mode PUSH avec rsyslog (Jobs 16 à 21)
+
+Les jobs 1 à 15 fonctionnent en **pull** : le client se connecte en SSH et va chercher les logs (cron). Le bonus passe en **push** : chaque serveur **envoie lui-même** ses échecs d'accès au collecteur (`pokemon_mariadb`) via **rsyslog**, qui les insère en base en temps réel.
+
+| | Pull (Jobs 1-15) | Push (Jobs 16-21) |
+|---|---|---|
+| Déclencheur | cron toutes les X min | événement (temps réel) |
+| Transport | SSH (paramiko) | rsyslog TCP 6514 + TLS |
+| Si le collecteur tombe | rien n'est perdu (logs sur place) | spool disque, renvoi automatique |
+
+Configs dans [`rsyslog/`](rsyslog/) (`collecteur/`, `ftp/`, `web/`) — les mots de passe sont remplacés par `VOTRE_MDP_RSYSLOG`.
+
+### Job 16 — Collecteur rsyslog
+Le serveur MariaDB écoute en TCP (`imtcp`) et reçoit les logs des autres machines.
+
+![Job 16](docs/captures/job16_collecteur.png)
+
+### Job 17 — Parsing MariaDB → base (`ommysql`)
+Extraction compte / IP / date des `Access denied` et insertion dans `psmm.acces_errors`. Template SQL avec échappement (anti-injection).
+
+![Job 17](docs/captures/job17_table.png)
+![Job 17 - comparaison](docs/captures/job17_compare.png)
+
+### Job 18 — Push FTP avec spool disque
+`imfile` sur `/var/log/vsftpd.log`, envoi `omfwd`, file d'attente sur disque si le collecteur est injoignable.
+
+![Job 18 - config](docs/captures/job18_conf.png)
+![Job 18 - spool](docs/captures/job18_spool.png)
+
+### Job 19 — Push Web (Apache)
+Même principe sur `error.log` : filtre des échecs d'auth basic (`AH01617` / `AH01618`).
+
+![Job 19](docs/captures/job19_web.png)
+
+### Job 20 — `rsyslog_mail.py` (mail sans doublons)
+Lecture de `acces_errors` avec un compte **SELECT seul** (`psmm_reader`), uniquement les `id` plus récents que le dernier traité (fichier d'état). Rapport SQL / FTP / Web + total. Cron à 7h30.
+
+![Job 20 - script](docs/captures/job20_script.png)
+![Job 20 - mail](docs/captures/job20_mail.png)
+
+### Job 21 — Sécurisation : TLS mutuel, pare-feu, anti-injection
+- **mTLS** (mini-PKI `certtool`, CA + certificat par machine, `x509/name`, port 6514) : seuls `pokemon-ftp` et `pokemon-web` peuvent envoyer
+- **nftables** : port 6514 accepté uniquement depuis les IP FTP et Web
+- **Anti-injection SQL** : `option.sql="on"` / template `,sql` + compte MariaDB `rsyslog` limité à `INSERT`
+
+![PKI](docs/captures/job21_pki.png)
+![Port 6514](docs/captures/job21_6514.png)
+![Trafic chiffré](docs/captures/job21_chiffre.png)
+![tcpdump](docs/captures/job21_tcpdump.png)
+![nftables](docs/captures/job21_nft.png)
+![nftables OK](docs/captures/job21_nftok.png)
+![Injection](docs/captures/job21_inject.png)
+
+> ⚠️ **Limite connue :** les VM reçoivent une IP DHCP qui change à chaque session. Les `target=` des configs rsyslog (FTP/Web) et `config.py` doivent être mis à jour si les IP changent.
+
+📎 [Diaporama du bonus (PDF)](docs/PSMM_bonus.pdf)
+
+---
+
 ## 🚧 Défis techniques surmontés
 
 ### Réseau plateforme
@@ -185,7 +245,8 @@ Le portail captif renvoyait une **erreur 411** sur les serveurs.
 
 ## 📊 Support de soutenance
 
-📎 [Diaporama de présentation (PDF)](docs/PSMM_soutenance.pdf)
+📎 [Diaporama de présentation (PDF)](docs/PSMM_soutenance.pdf)  
+📎 [Diaporama du bonus rsyslog (PDF)](docs/PSMM_bonus.pdf)
 
 ---
 
