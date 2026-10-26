@@ -1,5 +1,11 @@
 # 🛡️ PSMM — Supervision de sécurité
 
+![Python](https://img.shields.io/badge/Language-Python-blue)
+![Bash](https://img.shields.io/badge/Shell-Bash-black)
+![MariaDB](https://img.shields.io/badge/Database-MariaDB-003545)
+![Debian](https://img.shields.io/badge/OS-Debian-A81D33)
+![Supervision](https://img.shields.io/badge/Focus-Supervision%20S%C3%A9curit%C3%A9-red)
+
 > **P**ython · **S**hell · **M**aria**D**B · **M**ail
 > Centralisation des protocoles de gestion d'erreurs — infrastructure Debian (+ bonus rsyslog en mode push)
 
