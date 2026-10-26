@@ -7,7 +7,7 @@ Projet réalisé dans le cadre du **Bachelor IT Cybersécurité** — La Platefo
 
 ---
 
-## 📖 Objectif
+## 🎯 Objectifs
 
 Mettre en place un **système de supervision de sécurité** qui :
 
@@ -54,7 +54,7 @@ Le tout automatisé, planifié et sécurisé.
 
 ---
 
-## 📂 Structure du dépôt
+## 📁 Structure du dépôt
 
 ```
 PSMM/
@@ -71,7 +71,7 @@ PSMM/
 
 ---
 
-## ⚙️ Installation
+## 🚀 Installation
 
 ```bash
 python3 -m venv psmm-venv
@@ -243,6 +243,19 @@ Le portail captif renvoyait une **erreur 411** sur les serveurs.
 
 ---
 
+## 🧠 Compétences démontrées
+
+- **Scripting Python** : collecte de journaux FTP, SQL et Web sur des serveurs pilotés en SSH.
+- **Administration Linux** : 4 VM Debian 13 durcies (SSH par clé, `AllowUsers`, sudo granulaire).
+- **Supervision et détection** : repérage des tentatives d'accès frauduleuses et archivage dans MariaDB.
+- **Journalisation centralisée** : rsyslog en mode push, parsing vers la base, TLS mutuel (jobs 16 à 21).
+- **Alerting** : mails sans doublons et notifications Google Chat.
+- **Automatisation** : tâches cron (sauvegardes, monitoring, rapport quotidien).
+- **Sécurité** : moindre privilège, secrets isolés dans `.env`, pare-feu, protection contre l'injection.
+- **Diagnostic réseau** : filtrage MAC (ARP `FAILED`) et portail captif Alcasar.
+
+---
+
 ## 📊 Support de soutenance
 
 📎 [Diaporama de présentation (PDF)](docs/PSMM_soutenance.pdf)  
@@ -250,4 +263,9 @@ Le portail captif renvoyait une **erreur 411** sur les serveurs.
 
 ---
 
-*Alexis Noiret — Groupe pokemon — La Plateforme*
+## 👤 Auteur
+
+**Alexis Noiret** — Bachelor IT Cybersécurité, La Plateforme (groupe « pokemon »)
+
+- Portfolio : [alexis-noiret.students-laplateforme.io](https://alexis-noiret.students-laplateforme.io)
+- GitHub : [github.com/alexis-noiret](https://github.com/alexis-noiret)
